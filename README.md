@@ -101,3 +101,23 @@ video.ai/
 ├── uploads/              # Temporary storage for uploaded videos
 └── outputs/              # Generated reel clips and ZIP archives
 ```
+
+---
+
+## 🌐 Free Cloud Deployment (Why Netlify Doesn't Work & How to Deploy to Render)
+
+### Why Netlify Shows "Page Not Found":
+- **Netlify only hosts static frontend files** (HTML/CSS/JS). It looks for an `index.html` file in the root directory.
+- **Trimaz is a full Python backend application** with FFmpeg video processing and OpenCV. Netlify cannot run Python web servers or execute FFmpeg binaries.
+- Netlify functions also have a strict 10-second timeout and 512MB memory limit, which terminates video slicing immediately.
+
+### Deploy to Render for Free (Recommended):
+Render provides free web service hosting with Docker and FFmpeg support:
+
+1. Go to **[https://dashboard.render.com](https://dashboard.render.com)**.
+2. Click **New +** → **Web Service**.
+3. Connect your GitHub repository: **`AZHAN-01/Trimaz`**.
+4. Select **Docker** as the runtime (Render will automatically detect our `Dockerfile`).
+5. Choose the **Free** plan.
+6. Click **Deploy Web Service**!
+   Render will build the Docker container with FFmpeg, start the server, and give you a free live URL (e.g. `https://trimaz.onrender.com`)!

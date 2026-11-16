@@ -153,16 +153,23 @@ def calculate_segments(total_duration: float, segment_len: float = 60.0, overlap
         
     return segments
 
+def get_default_video_codec():
+    """Return best video encoder depending on OS and hardware."""
+    if sys.platform == "win32":
+        return "h264_mf"
+    return "libx264"
+
 def cut_clip(ffmpeg_path: str, input_path: str, output_path: str, start: float, duration: float, mode: str = "fast"):
     """
     Cut a single clip using FFmpeg.
     mode:
       - 'fast': Lossless stream copy (-c copy). Instant, zero quality loss, keeps original audio.
       - 'portrait_blur': 9:16 vertical reel with blurred background.
-      - 'portrait_crop': 9:16 vertical reel with center crop.
+      - 'portrait_crop': 9:16 vertical center crop.
       - 'portrait_fit': 9:16 vertical reel with black letterboxing.
     """
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    vcodec = get_default_video_codec()
     
     if mode == "fast":
         # Ultra fast stream copy
@@ -193,7 +200,7 @@ def cut_clip(ffmpeg_path: str, input_path: str, output_path: str, start: float, 
             "-i", input_path,
             "-t", str(duration),
             "-filter_complex", filter_str,
-            "-vcodec", "h264_mf",
+            "-vcodec", vcodec,
             "-c:a", "copy",
             output_path
         ]
@@ -207,7 +214,7 @@ def cut_clip(ffmpeg_path: str, input_path: str, output_path: str, start: float, 
             "-i", input_path,
             "-t", str(duration),
             "-vf", filter_str,
-            "-vcodec", "h264_mf",
+            "-vcodec", vcodec,
             "-c:a", "copy",
             output_path
         ]
@@ -221,7 +228,7 @@ def cut_clip(ffmpeg_path: str, input_path: str, output_path: str, start: float, 
             "-i", input_path,
             "-t", str(duration),
             "-vf", filter_str,
-            "-vcodec", "h264_mf",
+            "-vcodec", vcodec,
             "-c:a", "copy",
             output_path
         ]
@@ -241,21 +248,18 @@ def cut_clip(ffmpeg_path: str, input_path: str, output_path: str, start: float, 
     # Run FFmpeg process
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:
-        # If hardware encoder h264_mf failed (e.g. On certain machines), fallback to libopenh264 or fast copy
-        if "h264_mf" in cmd:
-            fallback_cmd = [arg if arg != "h264_mf" else "libopenh264" for arg in cmd]
-            proc = subprocess.run(fallback_cmd, capture_output=True, text=True)
+        # Fallback cascade: vcodec -> libopenh264 -> stream copy
+        fallback_cmd = [arg if arg != vcodec else "libopenh264" for arg in cmd]
+        proc = subprocess.run(fallback_cmd, capture_output=True, text=True)
+        if proc.returncode != 0:
+            # If still fails, fallback to stream copy
+            fallback_copy = [
+                ffmpeg_path, "-y", "-ss", str(start), "-i", input_path,
+                "-t", str(duration), "-c", "copy", "-avoid_negative_ts", "make_zero", output_path
+            ]
+            proc = subprocess.run(fallback_copy, capture_output=True, text=True)
             if proc.returncode != 0:
-                # If still fails, fallback to stream copy
-                fallback_copy = [
-                    ffmpeg_path, "-y", "-ss", str(start), "-i", input_path,
-                    "-t", str(duration), "-c", "copy", "-avoid_negative_ts", "make_zero", output_path
-                ]
-                proc = subprocess.run(fallback_copy, capture_output=True, text=True)
-                if proc.returncode != 0:
-                    raise RuntimeError(f"FFmpeg cutting failed: {proc.stderr[:400]}")
-        else:
-            raise RuntimeError(f"FFmpeg error: {proc.stderr[:400]}")
+                raise RuntimeError(f"FFmpeg cutting failed: {proc.stderr[:400]}")
     
     return True
 
