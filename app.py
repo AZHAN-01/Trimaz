@@ -9,6 +9,7 @@ from pathlib import Path
 from flask import Flask, render_template, request, jsonify, send_file, send_from_directory, Response
 
 import cutter
+import downloader
 
 BASE_DIR = Path(__file__).parent.resolve()
 UPLOAD_DIR = BASE_DIR / "uploads"
@@ -74,6 +75,73 @@ def api_system():
         "upload_dir": str(UPLOAD_DIR),
         "output_dir": str(OUTPUT_DIR)
     })
+
+# Download tasks store for link downloads
+DOWNLOAD_TASKS = {}
+DOWNLOAD_LOCK = threading.Lock()
+
+@app.route("/api/fetch-url", methods=["POST"])
+def api_fetch_url():
+    data = request.get_json(silent=True) or {}
+    url = data.get("url", "").strip()
+    if not url:
+        return jsonify({"error": "Please enter a valid video link"}), 400
+    
+    if not downloader.is_valid_url(url):
+        return jsonify({"error": "Invalid URL format. Please enter a valid web link."}), 400
+
+    download_id = str(uuid.uuid4())[:12]
+    with DOWNLOAD_LOCK:
+        DOWNLOAD_TASKS[download_id] = {
+            "status": "starting",
+            "percent": 0,
+            "message": "Connecting to video server...",
+            "result": None,
+            "error": None
+        }
+
+    def run_download():
+        def progress(info):
+            with DOWNLOAD_LOCK:
+                if download_id in DOWNLOAD_TASKS:
+                    DOWNLOAD_TASKS[download_id].update(info)
+
+        try:
+            result = downloader.download_video_from_url(url, str(UPLOAD_DIR), progress_callback=progress)
+            file_id = result["file_id"]
+            UPLOADED_FILES[file_id] = result
+            with DOWNLOAD_LOCK:
+                DOWNLOAD_TASKS[download_id] = {
+                    "status": "completed",
+                    "percent": 100,
+                    "message": "Video downloaded successfully!",
+                    "result": {
+                        "success": True,
+                        "file_id": file_id,
+                        "filename": result["filename"],
+                        "metadata": result["metadata"],
+                        "thumb_url": result["thumb_url"]
+                    }
+                }
+        except Exception as e:
+            with DOWNLOAD_LOCK:
+                DOWNLOAD_TASKS[download_id] = {
+                    "status": "error",
+                    "percent": 0,
+                    "error": str(e),
+                    "message": f"Failed to download video: {str(e)}"
+                }
+
+    threading.Thread(target=run_download, daemon=True).start()
+    return jsonify({"success": True, "download_id": download_id})
+
+@app.route("/api/fetch-status/<download_id>")
+def api_fetch_status(download_id):
+    with DOWNLOAD_LOCK:
+        task = DOWNLOAD_TASKS.get(download_id)
+        if not task:
+            return jsonify({"error": "Download task not found"}), 404
+        return jsonify(task)
 
 @app.route("/api/upload", methods=["POST"])
 def api_upload():

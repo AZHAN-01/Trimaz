@@ -9,6 +9,8 @@ document.addEventListener("DOMContentLoaded", () => {
     // DOM Elements
     const dropzone = document.getElementById("dropzone");
     const videoInput = document.getElementById("videoInput");
+    const videoUrlInput = document.getElementById("videoUrlInput");
+    const fetchUrlBtn = document.getElementById("fetchUrlBtn");
     
     // Sections
     const uploadSection = document.getElementById("uploadSection");
@@ -114,6 +116,93 @@ document.addEventListener("DOMContentLoaded", () => {
             handleFileUpload(e.target.files[0]);
         }
     });
+
+    // ----------------------------------------------------
+    // URL Link Fetching
+    // ----------------------------------------------------
+    if (fetchUrlBtn && videoUrlInput) {
+        fetchUrlBtn.addEventListener("click", handleUrlFetch);
+        videoUrlInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                handleUrlFetch();
+            }
+        });
+    }
+
+    function handleUrlFetch() {
+        const url = videoUrlInput.value.trim();
+        if (!url) {
+            showToast("Please paste a valid video URL.");
+            return;
+        }
+
+        // Show progress UI
+        uploadProgressContainer.style.display = "block";
+        uploadProgressBar.style.width = "5%";
+        uploadProgressPercent.innerText = "5%";
+        uploadProgressLabel.innerText = "Connecting to video link...";
+        uploadStats.innerText = "Analyzing web stream...";
+        fetchUrlBtn.disabled = true;
+
+        fetch("/api/fetch-url", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url: url })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success && data.download_id) {
+                pollDownloadProgress(data.download_id);
+            } else {
+                fetchUrlBtn.disabled = false;
+                showToast(data.error || "Failed to process video link");
+                uploadProgressContainer.style.display = "none";
+            }
+        })
+        .catch(err => {
+            fetchUrlBtn.disabled = false;
+            showToast("Network error contacting server");
+            uploadProgressContainer.style.display = "none";
+        });
+    }
+
+    function pollDownloadProgress(downloadId) {
+        let dlInterval = setInterval(() => {
+            fetch(`/api/fetch-status/${downloadId}`)
+                .then(res => res.json())
+                .then(status => {
+                    if (status.status === "error") {
+                        clearInterval(dlInterval);
+                        fetchUrlBtn.disabled = false;
+                        showToast(status.message || "Failed to download video from URL");
+                        uploadProgressContainer.style.display = "none";
+                        return;
+                    }
+
+                    const pct = Math.round(status.percent || 10);
+                    uploadProgressBar.style.width = pct + "%";
+                    uploadProgressPercent.innerText = pct + "%";
+                    if (status.message) uploadProgressLabel.innerText = status.message;
+                    if (status.speed) {
+                        uploadStats.innerText = `${formatBytes(status.downloaded || 0)} / ${formatBytes(status.total || 0)} (${formatBytes(status.speed)}/s)`;
+                    }
+
+                    if (status.status === "completed" && status.result) {
+                        clearInterval(dlInterval);
+                        fetchUrlBtn.disabled = false;
+                        videoUrlInput.value = "";
+                        currentUploadedFile = status.result;
+                        setupConfigStage(status.result);
+                    }
+                })
+                .catch(err => {
+                    clearInterval(dlInterval);
+                    fetchUrlBtn.disabled = false;
+                    showToast("Error checking download progress");
+                });
+        }, 500);
+    }
 
     function formatBytes(bytes) {
         if (bytes < 1024) return bytes + ' B';

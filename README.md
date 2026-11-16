@@ -8,7 +8,9 @@ Trimaz is a modern video processing software designed to take large videos (podc
 
 ## ⚡ Key Features
 
-- **Upload & Slice**: Drag and drop any large video file (MP4, MKV, MOV, AVI, WEBM, FLV, TS up to 10 GB).
+- **Paste Video Link**: Just paste a link from **YouTube, Instagram Reels, TikTok, Twitter/X, Facebook**, or direct MP4 link! Trimaz fetches and cuts it automatically.
+- **Upload & Slice**: Or drag and drop any local video file (MP4, MKV, MOV, AVI, WEBM, FLV, TS up to 10 GB).
+- **Zero Disk Waste**: Uploaded or downloaded source videos are automatically deleted immediately after slicing is completed!
 - **Default 1-Minute Reels**: Automatically splits the entire video into 60-second segments.
 - **Customizable Duration**: Easily choose presets like 30s, 60s (1 min), 90s, or any custom seconds.
 - **4 Cutting Modes**:
@@ -52,7 +54,10 @@ Then open [http://localhost:5000](http://localhost:5000) in your browser.
 Prefer working from the terminal? Use `cli.py` to cut videos directly without opening a browser:
 
 ```powershell
-# Cut a video into 1-minute (60s) reels (Lossless Fast Mode)
+# Cut a video from a YouTube, Instagram, or TikTok link into 1-min reels:
+python cli.py "https://www.youtube.com/watch?v=..." --duration 60
+
+# Cut a local video file into 1-minute (60s) reels:
 python cli.py "my_large_video.mp4"
 
 # Cut into 60s reels with 2-second overlap

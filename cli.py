@@ -17,6 +17,7 @@ import argparse
 import time
 from pathlib import Path
 import cutter
+import downloader
 
 def main():
     parser = argparse.ArgumentParser(
@@ -36,11 +37,26 @@ def main():
     parser.add_argument("-p", "--prefix", default="Reel", help="Filename prefix (default: Reel)")
 
     args = parser.parse_args()
-    video_path = Path(args.video).resolve()
+    raw_video = args.video.strip()
+    is_url = raw_video.startswith("http://") or raw_video.startswith("https://")
+    cleanup_after = False
 
-    if not video_path.exists():
-        print(f"❌ Error: Video file not found: {video_path}")
-        sys.exit(1)
+    if is_url:
+        print(f"🔗 Detected Video URL: {raw_video}")
+        print("⬇️  Fetching video stream...")
+        try:
+            res = downloader.download_video_from_url(raw_video, "uploads")
+            video_path = Path(res["path"]).resolve()
+            cleanup_after = True
+            print(f"✅ Downloaded: {video_path.name}")
+        except Exception as e:
+            print(f"❌ Failed to download from URL: {e}")
+            sys.exit(1)
+    else:
+        video_path = Path(raw_video).resolve()
+        if not video_path.exists():
+            print(f"❌ Error: Video file not found: {video_path}")
+            sys.exit(1)
 
     print("=" * 60)
     print(f"🎬 Trimaz - 1-Minute Reel Generator")
@@ -61,7 +77,7 @@ def main():
     
     print("\n🚀 Processing video...")
     
-    # Process (preserve user original file on CLI)
+    # Process (auto-cleanup if downloaded from link, preserve if local file)
     cutter.process_video_task(
         task_id=task_id,
         input_path=str(video_path),
@@ -70,7 +86,7 @@ def main():
         mode=args.mode,
         overlap=args.overlap,
         prefix=args.prefix,
-        cleanup_input=False
+        cleanup_input=cleanup_after
     )
 
     task = cutter.TASKS.get(task_id, {})
