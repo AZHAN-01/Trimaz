@@ -41,6 +41,11 @@ def probe_video_info(url: str):
         'no_warnings': True,
         'skip_download': True,
         'noplaylist': True,
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['ios', 'android', 'web']
+            }
+        }
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -213,6 +218,11 @@ def download_video_from_url(url: str, upload_dir: str, format_spec: str = None, 
         'progress_hooks': [ydl_hook],
         'ffmpeg_location': ffmpeg_exe,
         'merge_output_format': 'mp4',
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['ios', 'android', 'web']
+            }
+        }
     }
 
     try:
