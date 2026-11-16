@@ -26,6 +26,41 @@ app.config['UPLOAD_FOLDER'] = str(UPLOAD_DIR)
 # Store uploaded video metadata
 UPLOADED_FILES = {}
 
+def cleanup_stale_uploads():
+    """Purge leftover upload files in UPLOAD_DIR on startup."""
+    try:
+        for item in UPLOAD_DIR.iterdir():
+            if item.name == ".gitkeep":
+                continue
+            try:
+                if item.is_file():
+                    item.unlink()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+def janitor_loop():
+    """Background thread that deletes abandoned upload files older than 10 minutes."""
+    while True:
+        time.sleep(120)
+        now = time.time()
+        try:
+            for item in UPLOAD_DIR.iterdir():
+                if item.name == ".gitkeep":
+                    continue
+                try:
+                    if item.is_file() and (now - item.stat().st_mtime > 600):
+                        item.unlink()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+# Run startup cleanup & background janitor
+cleanup_stale_uploads()
+threading.Thread(target=janitor_loop, daemon=True).start()
+
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -90,6 +125,22 @@ def api_upload():
 def api_upload_thumb(filename):
     return send_from_directory(str(UPLOAD_DIR), filename)
 
+@app.route("/api/discard", methods=["POST"])
+def api_discard():
+    """Immediately remove uploaded raw video and preview thumbnail."""
+    data = request.get_json(silent=True) or {}
+    file_id = data.get("file_id")
+    if file_id and file_id in UPLOADED_FILES:
+        info = UPLOADED_FILES.pop(file_id, {})
+        for key in ["path", "thumb_path"]:
+            p = Path(info.get(key, ""))
+            if p.exists():
+                try:
+                    p.unlink()
+                except Exception:
+                    pass
+    return jsonify({"success": True})
+
 @app.route("/api/process", methods=["POST"])
 def api_process():
     data = request.get_json() or {}
@@ -98,8 +149,9 @@ def api_process():
     if not file_id or file_id not in UPLOADED_FILES:
         return jsonify({"error": "Invalid or missing file_id"}), 400
     
-    file_info = UPLOADED_FILES[file_id]
+    file_info = UPLOADED_FILES.pop(file_id)
     input_path = file_info["path"]
+    thumb_path = file_info.get("thumb_path")
     
     # Config parameters with 60 seconds (1 minute) default!
     segment_len = float(data.get("segment_len", 60.0))
@@ -109,10 +161,10 @@ def api_process():
     
     task_id = str(uuid.uuid4())
     
-    # Launch background thread
+    # Launch background thread with cleanup_input=True
     worker = threading.Thread(
         target=cutter.process_video_task,
-        args=(task_id, input_path, str(OUTPUT_DIR), segment_len, mode, overlap, prefix),
+        args=(task_id, input_path, str(OUTPUT_DIR), segment_len, mode, overlap, prefix, True, thumb_path),
         daemon=True
     )
     worker.start()

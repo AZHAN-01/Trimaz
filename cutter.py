@@ -268,10 +268,11 @@ def create_zip_archive(clip_paths: list, zip_destination: str):
                 zipf.write(p, arcname=os.path.basename(p))
     return zip_destination
 
-def process_video_task(task_id: str, input_path: str, output_dir: str, segment_len: float = 60.0, mode: str = "fast", overlap: float = 0.0, prefix: str = "Reel"):
+def process_video_task(task_id: str, input_path: str, output_dir: str, segment_len: float = 60.0, mode: str = "fast", overlap: float = 0.0, prefix: str = "Reel", cleanup_input: bool = True, temp_thumb_path: str = None):
     """
     Background worker thread function to slice video into 1-minute reels.
     Updates the global TASKS dictionary for real-time progress monitoring.
+    Automatically deletes the uploaded input video and temp thumbnail when done.
     """
     ffmpeg_path = get_ffmpeg_path()
     
@@ -394,3 +395,16 @@ def process_video_task(task_id: str, input_path: str, output_dir: str, segment_l
                 "error": str(e),
                 "message": f"Error: {str(e)}"
             })
+    finally:
+        # Automatically clean up the uploaded original video and preview thumbnail from disk
+        if cleanup_input and input_path and os.path.exists(input_path):
+            try:
+                os.remove(input_path)
+                print(f"[Cleanup] Deleted temporary uploaded video: {input_path}")
+            except Exception as clean_err:
+                print(f"[Cleanup] Failed to delete {input_path}: {clean_err}")
+        if cleanup_input and temp_thumb_path and os.path.exists(temp_thumb_path):
+            try:
+                os.remove(temp_thumb_path)
+            except Exception:
+                pass

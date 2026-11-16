@@ -61,7 +61,7 @@ def main():
     
     print("\n🚀 Processing video...")
     
-    # Process
+    # Process (preserve user original file on CLI)
     cutter.process_video_task(
         task_id=task_id,
         input_path=str(video_path),
@@ -69,7 +69,8 @@ def main():
         segment_len=args.duration,
         mode=args.mode,
         overlap=args.overlap,
-        prefix=args.prefix
+        prefix=args.prefix,
+        cleanup_input=False
     )
 
     task = cutter.TASKS.get(task_id, {})

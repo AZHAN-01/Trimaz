@@ -254,7 +254,20 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     });
 
+    function discardUploadedFile() {
+        if (currentUploadedFile && currentUploadedFile.file_id) {
+            try {
+                fetch("/api/discard", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ file_id: currentUploadedFile.file_id })
+                }).catch(() => {});
+            } catch (e) {}
+        }
+    }
+
     cancelConfigBtn.addEventListener("click", () => {
+        discardUploadedFile();
         configSection.style.display = "none";
         uploadSection.style.display = "block";
         uploadProgressContainer.style.display = "none";
@@ -426,12 +439,20 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     startNewVideoBtn.addEventListener("click", () => {
+        discardUploadedFile();
         resultsSection.style.display = "none";
         uploadSection.style.display = "block";
         uploadProgressContainer.style.display = "none";
         videoInput.value = "";
         currentUploadedFile = null;
         currentTaskId = null;
+    });
+
+    window.addEventListener("beforeunload", () => {
+        if (currentUploadedFile && currentUploadedFile.file_id) {
+            const blob = new Blob([JSON.stringify({ file_id: currentUploadedFile.file_id })], { type: 'application/json' });
+            navigator.sendBeacon("/api/discard", blob);
+        }
     });
 
     // ----------------------------------------------------
