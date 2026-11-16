@@ -11,6 +11,19 @@ document.addEventListener("DOMContentLoaded", () => {
     const videoInput = document.getElementById("videoInput");
     const videoUrlInput = document.getElementById("videoUrlInput");
     const fetchUrlBtn = document.getElementById("fetchUrlBtn");
+
+    // Quality Selector Elements
+    const qualityModal = document.getElementById("qualityModal");
+    const qualityModalBackdrop = document.getElementById("qualityModalBackdrop");
+    const qualityModalCloseBtn = document.getElementById("qualityModalCloseBtn");
+    const qualityCancelBtn = document.getElementById("qualityCancelBtn");
+    const confirmQualityBtn = document.getElementById("confirmQualityBtn");
+    const qualityThumb = document.getElementById("qualityThumb");
+    const qualityVideoName = document.getElementById("qualityVideoName");
+    const qualityUploader = document.getElementById("qualityUploader");
+    const qualityDuration = document.getElementById("qualityDuration");
+    const qualityOptionsList = document.getElementById("qualityOptionsList");
+    let currentProbeInfo = null;
     
     // Sections
     const uploadSection = document.getElementById("uploadSection");
@@ -118,7 +131,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
 
     // ----------------------------------------------------
-    // URL Link Fetching
+    // URL Link Inspection & Quality Selection
     // ----------------------------------------------------
     if (fetchUrlBtn && videoUrlInput) {
         fetchUrlBtn.addEventListener("click", handleUrlFetch);
@@ -130,6 +143,21 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
 
+    function closeQualityModal() {
+        qualityModal.classList.remove("active");
+        fetchUrlBtn.disabled = false;
+        fetchUrlBtn.innerHTML = `
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            Fetch & Cut
+        `;
+    }
+
+    if (qualityModalCloseBtn) qualityModalCloseBtn.addEventListener("click", closeQualityModal);
+    if (qualityModalBackdrop) qualityModalBackdrop.addEventListener("click", closeQualityModal);
+    if (qualityCancelBtn) qualityCancelBtn.addEventListener("click", closeQualityModal);
+
     function handleUrlFetch() {
         const url = videoUrlInput.value.trim();
         if (!url) {
@@ -137,33 +165,137 @@ document.addEventListener("DOMContentLoaded", () => {
             return;
         }
 
-        // Show progress UI
-        uploadProgressContainer.style.display = "block";
-        uploadProgressBar.style.width = "5%";
-        uploadProgressPercent.innerText = "5%";
-        uploadProgressLabel.innerText = "Connecting to video link...";
-        uploadStats.innerText = "Analyzing web stream...";
+        // Show inspecting state on button
         fetchUrlBtn.disabled = true;
+        fetchUrlBtn.innerHTML = `
+            <span class="spinner" style="width:16px;height:16px;border-width:2px;display:inline-block;margin-right:6px;"></span>
+            Inspecting...
+        `;
 
-        fetch("/api/fetch-url", {
+        // 1. Probe video metadata first to show qualities and sizes
+        fetch("/api/probe-url", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ url: url })
         })
         .then(res => res.json())
         .then(data => {
-            if (data.success && data.download_id) {
-                pollDownloadProgress(data.download_id);
+            fetchUrlBtn.disabled = false;
+            fetchUrlBtn.innerHTML = `
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+                Fetch & Cut
+            `;
+
+            if (data.success && data.info) {
+                currentProbeInfo = data.info;
+                showQualityModal(data.info);
             } else {
-                fetchUrlBtn.disabled = false;
-                showToast(data.error || "Failed to process video link");
-                uploadProgressContainer.style.display = "none";
+                showToast(data.error || "Could not inspect video stream");
             }
         })
         .catch(err => {
             fetchUrlBtn.disabled = false;
-            showToast("Network error contacting server");
-            uploadProgressContainer.style.display = "none";
+            fetchUrlBtn.innerHTML = `
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+                Fetch & Cut
+            `;
+            showToast("Network error inspecting video URL");
+        });
+    }
+
+    function showQualityModal(info) {
+        qualityVideoName.innerText = info.title;
+        qualityVideoName.title = info.title;
+        qualityThumb.src = info.thumbnail || "";
+        qualityUploader.innerText = info.uploader || "Web Video";
+        qualityDuration.innerText = info.duration_formatted || "00:00";
+
+        // Render available quality cards
+        qualityOptionsList.innerHTML = "";
+        const qualities = info.qualities || [];
+
+        if (qualities.length === 0) {
+            qualities.push({
+                quality_id: "720",
+                height: 720,
+                label: "720p HD (Default)",
+                size_formatted: "Standard",
+                format_spec: "best",
+                recommended: true
+            });
+        }
+
+        qualities.forEach((q, idx) => {
+            const card = document.createElement("label");
+            card.className = "quality-card" + (q.recommended ? " selected" : "");
+            
+            card.innerHTML = `
+                <input type="radio" name="videoQualityOption" value="${q.format_spec}" ${q.recommended ? "checked" : ""}>
+                <div class="quality-card-left">
+                    <div class="quality-res-badge">${q.height}p</div>
+                    <div class="quality-details">
+                        <span class="quality-name">${q.label}</span>
+                        <span class="quality-desc">${q.recommended ? "★ Recommended quality & file size" : (q.height >= 1080 ? "Ultra sharp • Larger file" : "Fast download • Compact size")}</span>
+                    </div>
+                </div>
+                <div class="quality-size-badge">${q.size_formatted}</div>
+            `;
+
+            card.addEventListener("click", () => {
+                document.querySelectorAll(".quality-card").forEach(c => c.classList.remove("selected"));
+                card.classList.add("selected");
+                const radio = card.querySelector('input[type="radio"]');
+                if (radio) radio.checked = true;
+            });
+
+            qualityOptionsList.appendChild(card);
+        });
+
+        qualityModal.classList.add("active");
+    }
+
+    // Confirm Quality & Start Download
+    if (confirmQualityBtn) {
+        confirmQualityBtn.addEventListener("click", () => {
+            if (!currentProbeInfo) return;
+
+            const selectedRadio = document.querySelector('input[name="videoQualityOption"]:checked');
+            const formatSpec = selectedRadio ? selectedRadio.value : null;
+
+            closeQualityModal();
+
+            // Show download progress in upload container
+            uploadProgressContainer.style.display = "block";
+            uploadProgressBar.style.width = "5%";
+            uploadProgressPercent.innerText = "5%";
+            uploadProgressLabel.innerText = "Connecting to chosen stream...";
+            uploadStats.innerText = "Initializing video download...";
+
+            fetch("/api/fetch-url", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    url: currentProbeInfo.url,
+                    format_spec: formatSpec
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success && data.download_id) {
+                    pollDownloadProgress(data.download_id);
+                } else {
+                    showToast(data.error || "Failed to start download");
+                    uploadProgressContainer.style.display = "none";
+                }
+            })
+            .catch(err => {
+                showToast("Network error starting download");
+                uploadProgressContainer.style.display = "none";
+            });
         });
     }
 

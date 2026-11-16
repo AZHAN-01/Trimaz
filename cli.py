@@ -35,6 +35,8 @@ def main():
     parser.add_argument("-o", "--output", default="outputs", help="Output directory (default: ./outputs)")
     parser.add_argument("--overlap", type=float, default=0.0, help="Overlap in seconds between reels (default: 0)")
     parser.add_argument("-p", "--prefix", default="Reel", help="Filename prefix (default: Reel)")
+    parser.add_argument("-q", "--quality", choices=["1080", "720", "480", "360"], default=None,
+                        help="Video quality resolution for URL downloads (e.g. 720, 1080)")
 
     args = parser.parse_args()
     raw_video = args.video.strip()
@@ -43,14 +45,44 @@ def main():
 
     if is_url:
         print(f"🔗 Detected Video URL: {raw_video}")
-        print("⬇️  Fetching video stream...")
+        print("🔍 Probing video qualities and file sizes...")
         try:
-            res = downloader.download_video_from_url(raw_video, "uploads")
+            info = downloader.probe_video_info(raw_video)
+            qualities = info.get("qualities", [])
+            print(f"🎬 Video: {info['title']} ({info['duration_formatted']})")
+            print("\n📊 Available Qualities & Estimated Sizes:")
+            
+            chosen_spec = None
+            if args.quality:
+                for q in qualities:
+                    if q["quality_id"] == args.quality:
+                        chosen_spec = q["format_spec"]
+                        print(f"   Selected via flag: {q['label']} [{q['size_formatted']}]")
+                        break
+            
+            if not chosen_spec and qualities:
+                for idx, q in enumerate(qualities, 1):
+                    rec = " ★ Recommended" if q.get("recommended") else ""
+                    print(f"   [{idx}] {q['label']} — {q['size_formatted']}{rec}")
+                
+                try:
+                    choice = input(f"\nSelect quality [1-{len(qualities)}] (press Enter for recommended): ").strip()
+                    if choice.isdigit() and 1 <= int(choice) <= len(qualities):
+                        chosen_spec = qualities[int(choice) - 1]["format_spec"]
+                    else:
+                        # Find recommended or first
+                        rec_q = next((q for q in qualities if q.get("recommended")), qualities[0])
+                        chosen_spec = rec_q["format_spec"]
+                except (EOFError, KeyboardInterrupt):
+                    chosen_spec = qualities[0]["format_spec"]
+
+            print("\n⬇️  Downloading selected stream...")
+            res = downloader.download_video_from_url(raw_video, "uploads", format_spec=chosen_spec)
             video_path = Path(res["path"]).resolve()
             cleanup_after = True
             print(f"✅ Downloaded: {video_path.name}")
         except Exception as e:
-            print(f"❌ Failed to download from URL: {e}")
+            print(f"❌ Failed to process URL: {e}")
             sys.exit(1)
     else:
         video_path = Path(raw_video).resolve()

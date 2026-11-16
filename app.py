@@ -80,10 +80,25 @@ def api_system():
 DOWNLOAD_TASKS = {}
 DOWNLOAD_LOCK = threading.Lock()
 
+@app.route("/api/probe-url", methods=["POST"])
+def api_probe_url():
+    """Inspect a video link without downloading to return qualities and estimated sizes."""
+    data = request.get_json(silent=True) or {}
+    url = data.get("url", "").strip()
+    if not url or not downloader.is_valid_url(url):
+        return jsonify({"error": "Please enter a valid video link"}), 400
+
+    try:
+        info = downloader.probe_video_info(url)
+        return jsonify({"success": True, "info": info})
+    except Exception as e:
+        return jsonify({"error": f"Could not inspect video link: {str(e)}"}), 500
+
 @app.route("/api/fetch-url", methods=["POST"])
 def api_fetch_url():
     data = request.get_json(silent=True) or {}
     url = data.get("url", "").strip()
+    format_spec = data.get("format_spec")
     if not url:
         return jsonify({"error": "Please enter a valid video link"}), 400
     
@@ -107,7 +122,7 @@ def api_fetch_url():
                     DOWNLOAD_TASKS[download_id].update(info)
 
         try:
-            result = downloader.download_video_from_url(url, str(UPLOAD_DIR), progress_callback=progress)
+            result = downloader.download_video_from_url(url, str(UPLOAD_DIR), format_spec=format_spec, progress_callback=progress)
             file_id = result["file_id"]
             UPLOADED_FILES[file_id] = result
             with DOWNLOAD_LOCK:
