@@ -660,20 +660,20 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     startNewVideoBtn.addEventListener("click", () => {
-        discardUploadedFile();
+        fetch("/api/purge-all", { method: "POST" }).catch(() => {});
         resultsSection.style.display = "none";
         uploadSection.style.display = "block";
         uploadProgressContainer.style.display = "none";
         videoInput.value = "";
+        if (videoUrlInput) videoUrlInput.value = "";
         currentUploadedFile = null;
         currentTaskId = null;
+        currentProbeInfo = null;
     });
 
     window.addEventListener("beforeunload", () => {
-        if (currentUploadedFile && currentUploadedFile.file_id) {
-            const blob = new Blob([JSON.stringify({ file_id: currentUploadedFile.file_id })], { type: 'application/json' });
-            navigator.sendBeacon("/api/discard", blob);
-        }
+        // Completely wipe uploads and outputs on page refresh or tab close
+        navigator.sendBeacon("/api/purge-all");
     });
 
     // ----------------------------------------------------

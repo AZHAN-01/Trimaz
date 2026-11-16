@@ -27,8 +27,9 @@ app.config['UPLOAD_FOLDER'] = str(UPLOAD_DIR)
 # Store uploaded video metadata
 UPLOADED_FILES = {}
 
-def cleanup_stale_uploads():
-    """Purge leftover upload files in UPLOAD_DIR on startup."""
+def purge_all_storage():
+    """Completely wipe all files in uploads/ and outputs/ (preserving .gitkeep)."""
+    # 1. Clean uploads
     try:
         for item in UPLOAD_DIR.iterdir():
             if item.name == ".gitkeep":
@@ -36,35 +37,69 @@ def cleanup_stale_uploads():
             try:
                 if item.is_file():
                     item.unlink()
+                elif item.is_dir():
+                    shutil.rmtree(item, ignore_errors=True)
             except Exception:
                 pass
     except Exception:
         pass
 
+    # 2. Clean outputs
+    try:
+        for item in OUTPUT_DIR.iterdir():
+            if item.name == ".gitkeep":
+                continue
+            try:
+                if item.is_file():
+                    item.unlink()
+                elif item.is_dir():
+                    shutil.rmtree(item, ignore_errors=True)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # 3. Clear in-memory task tables
+    UPLOADED_FILES.clear()
+    with cutter.TASKS_LOCK:
+        cutter.TASKS.clear()
+
 def janitor_loop():
-    """Background thread that deletes abandoned upload files older than 10 minutes."""
+    """Background thread that deletes abandoned upload/output files older than 5 minutes."""
     while True:
-        time.sleep(120)
+        time.sleep(60)
         now = time.time()
-        try:
-            for item in UPLOAD_DIR.iterdir():
-                if item.name == ".gitkeep":
-                    continue
-                try:
-                    if item.is_file() and (now - item.stat().st_mtime > 600):
-                        item.unlink()
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        for target_dir in [UPLOAD_DIR, OUTPUT_DIR]:
+            try:
+                for item in target_dir.iterdir():
+                    if item.name == ".gitkeep":
+                        continue
+                    try:
+                        if item.stat().st_mtime and (now - item.stat().st_mtime > 300):
+                            if item.is_file():
+                                item.unlink()
+                            elif item.is_dir():
+                                shutil.rmtree(item, ignore_errors=True)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
 
 # Run startup cleanup & background janitor
-cleanup_stale_uploads()
+purge_all_storage()
 threading.Thread(target=janitor_loop, daemon=True).start()
 
 @app.route("/")
 def index():
+    # Purge uploads and outputs on every page load/refresh
+    purge_all_storage()
     return render_template("index.html")
+
+@app.route("/api/purge-all", methods=["POST", "GET"])
+def api_purge_all():
+    """Wipe both uploads and outputs on demand."""
+    purge_all_storage()
+    return jsonify({"success": True, "message": "Storage purged clean"})
 
 @app.route("/api/system")
 def api_system():
