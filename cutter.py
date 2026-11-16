@@ -14,21 +14,23 @@ TASKS = {}
 TASKS_LOCK = threading.Lock()
 
 def get_ffmpeg_path():
-    """Detect the best available ffmpeg binary."""
-    # 1. Local project bin
-    local_bin = Path(__file__).parent / "bin" / "ffmpeg.exe"
-    if local_bin.exists():
-        return str(local_bin)
+    """Detect the best available ffmpeg binary across Windows, Linux, and Cloud/Docker."""
+    # 1. If on Windows, prefer bundled local bin if available
+    if sys.platform == "win32":
+        local_bin = Path(__file__).parent / "bin" / "ffmpeg.exe"
+        if local_bin.exists():
+            return str(local_bin)
     
-    # 2. Check PATH
+    # 2. Check system PATH (standard on Linux/Docker/Mac/Windows)
     which_ffmpeg = shutil.which("ffmpeg")
     if which_ffmpeg:
         return which_ffmpeg
     
-    # 3. Check BlueStacks installation
-    bluestacks_path = Path("C:/Program Files/BlueStacks_nxt/ffmpeg.exe")
-    if bluestacks_path.exists():
-        return str(bluestacks_path)
+    # 3. Fallbacks for Windows
+    if sys.platform == "win32":
+        bluestacks_path = Path("C:/Program Files/BlueStacks_nxt/ffmpeg.exe")
+        if bluestacks_path.exists():
+            return str(bluestacks_path)
     
     return "ffmpeg"
 
