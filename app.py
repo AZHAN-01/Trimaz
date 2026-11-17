@@ -13,7 +13,7 @@ import downloader
 
 BASE_DIR = Path(__file__).parent.resolve()
 UPLOAD_DIR = BASE_DIR / "uploads"
-OUTPUT_DIR = BASE_DIR / "outputs"
+OUTPUT_DIR = BASE_DIR / "output"
 
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -26,50 +26,43 @@ app.config['UPLOAD_FOLDER'] = str(UPLOAD_DIR)
 
 # Store uploaded video metadata
 UPLOADED_FILES = {}
+DOWNLOAD_TASKS = {}
+DOWNLOAD_LOCK = threading.Lock()
 
 def purge_all_storage():
-    """Completely wipe all files in uploads/ and outputs/ (preserving .gitkeep)."""
-    # 1. Clean uploads
-    try:
-        for item in UPLOAD_DIR.iterdir():
-            if item.name == ".gitkeep":
-                continue
-            try:
-                if item.is_file():
-                    item.unlink()
-                elif item.is_dir():
-                    shutil.rmtree(item, ignore_errors=True)
-            except Exception:
-                pass
-    except Exception:
-        pass
+    """Completely wipe all files in uploads/ and output/ (preserving .gitkeep)."""
+    for target_dir in [UPLOAD_DIR, OUTPUT_DIR, BASE_DIR / "outputs"]:
+        if not target_dir.exists():
+            continue
+        try:
+            for item in target_dir.iterdir():
+                if item.name == ".gitkeep":
+                    continue
+                try:
+                    if item.is_file():
+                        item.unlink()
+                    elif item.is_dir():
+                        shutil.rmtree(item, ignore_errors=True)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
-    # 2. Clean outputs
-    try:
-        for item in OUTPUT_DIR.iterdir():
-            if item.name == ".gitkeep":
-                continue
-            try:
-                if item.is_file():
-                    item.unlink()
-                elif item.is_dir():
-                    shutil.rmtree(item, ignore_errors=True)
-            except Exception:
-                pass
-    except Exception:
-        pass
-
-    # 3. Clear in-memory task tables
+    # Clear in-memory task tables
     UPLOADED_FILES.clear()
     with cutter.TASKS_LOCK:
         cutter.TASKS.clear()
+    with DOWNLOAD_LOCK:
+        DOWNLOAD_TASKS.clear()
 
 def janitor_loop():
     """Background thread that deletes abandoned upload/output files older than 5 minutes."""
     while True:
         time.sleep(60)
         now = time.time()
-        for target_dir in [UPLOAD_DIR, OUTPUT_DIR]:
+        for target_dir in [UPLOAD_DIR, OUTPUT_DIR, BASE_DIR / "outputs"]:
+            if not target_dir.exists():
+                continue
             try:
                 for item in target_dir.iterdir():
                     if item.name == ".gitkeep":
@@ -110,10 +103,6 @@ def api_system():
         "upload_dir": str(UPLOAD_DIR),
         "output_dir": str(OUTPUT_DIR)
     })
-
-# Download tasks store for link downloads
-DOWNLOAD_TASKS = {}
-DOWNLOAD_LOCK = threading.Lock()
 
 @app.route("/api/probe-url", methods=["POST"])
 def api_probe_url():
@@ -303,19 +292,25 @@ def api_status(task_id):
 
 @app.route("/api/thumb/<task_id>/<filename>")
 def api_thumb(task_id, filename):
+    if (OUTPUT_DIR / filename).exists():
+        return send_from_directory(str(OUTPUT_DIR), filename)
     folder = OUTPUT_DIR / task_id
     return send_from_directory(str(folder), filename)
 
 @app.route("/api/stream/<task_id>/<filename>")
 def api_stream(task_id, filename):
-    file_path = OUTPUT_DIR / task_id / filename
+    file_path = OUTPUT_DIR / filename
+    if not file_path.exists():
+        file_path = OUTPUT_DIR / task_id / filename
     if not file_path.exists():
         return "File not found", 404
     return send_file(str(file_path), mimetype="video/mp4")
 
 @app.route("/api/download/<task_id>/<filename>")
 def api_download(task_id, filename):
-    file_path = OUTPUT_DIR / task_id / filename
+    file_path = OUTPUT_DIR / filename
+    if not file_path.exists():
+        file_path = OUTPUT_DIR / task_id / filename
     if not file_path.exists():
         return "File not found", 404
     return send_file(str(file_path), as_attachment=True, download_name=filename)
@@ -328,7 +323,9 @@ def api_download_all(task_id):
             return jsonify({"error": "ZIP not ready"}), 400
         zip_name = task["zip_file"]
         
-    zip_path = OUTPUT_DIR / task_id / zip_name
+    zip_path = OUTPUT_DIR / zip_name
+    if not zip_path.exists():
+        zip_path = OUTPUT_DIR / task_id / zip_name
     if not zip_path.exists():
         return jsonify({"error": "ZIP file not found on disk"}), 404
     
@@ -336,13 +333,7 @@ def api_download_all(task_id):
 
 @app.route("/api/open-folder", methods=["POST"])
 def api_open_folder():
-    data = request.get_json() or {}
-    task_id = data.get("task_id")
-    target_dir = OUTPUT_DIR / task_id if task_id else OUTPUT_DIR
-    
-    if not target_dir.exists():
-        target_dir = OUTPUT_DIR
-    
+    target_dir = OUTPUT_DIR
     try:
         if sys.platform == "win32":
             os.startfile(str(target_dir))

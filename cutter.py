@@ -317,7 +317,7 @@ def process_video_task(task_id: str, input_path: str, output_dir: str, segment_l
                 "metadata": metadata
             })
             
-        task_output_dir = Path(output_dir) / task_id
+        task_output_dir = Path(output_dir)
         os.makedirs(task_output_dir, exist_ok=True)
         
         generated_clips = []

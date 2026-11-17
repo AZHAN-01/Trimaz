@@ -32,7 +32,7 @@ def main():
                              "  portrait_blur: 9:16 vertical reel with blurred background\n"
                              "  portrait_crop: 9:16 vertical center crop\n"
                              "  portrait_fit: 9:16 letterbox with black bars")
-    parser.add_argument("-o", "--output", default="outputs", help="Output directory (default: ./outputs)")
+    parser.add_argument("-o", "--output", default="output", help="Output directory (default: ./output)")
     parser.add_argument("--overlap", type=float, default=0.0, help="Overlap in seconds between reels (default: 0)")
     parser.add_argument("-p", "--prefix", default="Reel", help="Filename prefix (default: Reel)")
     parser.add_argument("-q", "--quality", choices=["1080", "720", "480", "360"], default=None,
